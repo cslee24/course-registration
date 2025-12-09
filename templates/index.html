@@ -12,11 +12,23 @@
             padding: 20px;
             background-color: #f5f5f5;
         }
-        h1, h2 {
-            color: #333;
-            text-align: center;
-        }
+        h1, h2 { color: #333; text-align: center; }
         h2 { font-size: 18px; margin-top: 30px; }
+        
+        .time-info {
+            background: #e3f2fd;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            text-align: center;
+            border: 1px solid #2196f3;
+        }
+        .time-info.closed {
+            background: #ffebee;
+            border-color: #f44336;
+        }
+        .time-info .status { font-size: 18px; font-weight: bold; margin-bottom: 10px; }
+        .time-info .schedule { color: #666; font-size: 14px; }
         
         .student-info {
             background: white;
@@ -101,15 +113,16 @@
             border-radius: 4px;
             border: 1px solid #ffc107;
         }
-        .no-enrollments {
-            color: #856404;
-            text-align: center;
-            padding: 10px;
-        }
     </style>
 </head>
 <body>
     <h1>📚 수강신청 시스템</h1>
+    
+    <!-- 신청 시간 안내 -->
+    <div id="timeInfo" class="time-info">
+        <div class="status" id="timeStatus">⏳ 로딩 중...</div>
+        <div class="schedule" id="timeSchedule"></div>
+    </div>
     
     <!-- 학생 정보 입력 -->
     <div class="student-info">
@@ -139,6 +152,41 @@
     <script>
         let studentId = '';
         let studentName = '';
+        let enrollAllowed = false;
+
+        // 신청 시간 정보 불러오기
+        async function loadTimeInfo() {
+            const response = await fetch('/api/enroll-time');
+            const data = await response.json();
+            
+            const timeInfo = document.getElementById('timeInfo');
+            const status = document.getElementById('timeStatus');
+            const schedule = document.getElementById('timeSchedule');
+            
+            enrollAllowed = data.allowed;
+            
+            if (data.allowed) {
+                timeInfo.className = 'time-info';
+                status.textContent = '✅ 신청 가능';
+            } else {
+                timeInfo.className = 'time-info closed';
+                status.textContent = '❌ ' + data.message;
+            }
+            
+            if (data.start && data.end) {
+                const startDate = new Date(data.start);
+                const endDate = new Date(data.end);
+                schedule.textContent = `신청 기간: ${formatDate(startDate)} ~ ${formatDate(endDate)}`;
+            } else {
+                schedule.textContent = '';
+            }
+            
+            loadCourses();
+        }
+
+        function formatDate(date) {
+            return `${date.getMonth()+1}/${date.getDate()} ${date.getHours().toString().padStart(2,'0')}:${date.getMinutes().toString().padStart(2,'0')}`;
+        }
 
         function saveStudent() {
             studentId = document.getElementById('studentId').value.trim();
@@ -163,7 +211,6 @@
             document.getElementById('myEnrollmentsSection').style.display = 'none';
         }
 
-        // 강좌 목록 불러오기
         async function loadCourses() {
             const response = await fetch('/api/courses');
             const courses = await response.json();
@@ -174,6 +221,21 @@
             courses.forEach(course => {
                 const isFull = course.enrolled >= course.limit;
                 const noStudent = !studentId || !studentName;
+                const canEnroll = enrollAllowed && !isFull && !noStudent;
+                
+                let btnClass = 'btn-disabled';
+                let btnText = '정보입력필요';
+                
+                if (!enrollAllowed) {
+                    btnClass = 'btn-closed';
+                    btnText = '신청불가';
+                } else if (isFull) {
+                    btnClass = 'btn-closed';
+                    btnText = '마감';
+                } else if (!noStudent) {
+                    btnClass = 'btn-enroll';
+                    btnText = '신청하기';
+                }
                 
                 const div = document.createElement('div');
                 div.className = 'course';
@@ -183,17 +245,16 @@
                         <div class="course-count">${course.enrolled}/${course.limit}명</div>
                     </div>
                     <button 
-                        class="${isFull ? 'btn-closed' : (noStudent ? 'btn-disabled' : 'btn-enroll')}"
-                        ${isFull || noStudent ? 'disabled' : ''}
+                        class="${btnClass}"
+                        ${canEnroll ? '' : 'disabled'}
                         onclick="enroll(${course.id})">
-                        ${isFull ? '마감' : (noStudent ? '정보입력필요' : '신청하기')}
+                        ${btnText}
                     </button>
                 `;
                 container.appendChild(div);
             });
         }
 
-        // 내 신청 목록 불러오기
         async function loadMyEnrollments() {
             if (!studentId) return;
             
@@ -220,16 +281,15 @@
                 div.className = 'my-enrollment-item';
                 div.innerHTML = `
                     <span>${e.course_name}</span>
-                    <button class="btn-cancel" onclick="cancelEnrollment(${e.id})">취소</button>
+                    <button class="btn-cancel" onclick="cancelEnrollment(${e.id})" ${enrollAllowed ? '' : 'disabled'}>취소</button>
                 `;
                 container.appendChild(div);
             });
         }
 
-        // 수강신청
         async function enroll(courseId) {
-            if (!studentId || !studentName) {
-                alert('학생 정보를 먼저 입력하세요.');
+            if (!enrollAllowed) {
+                alert('신청 가능한 시간이 아닙니다.');
                 return;
             }
             
@@ -249,8 +309,11 @@
             loadMyEnrollments();
         }
 
-        // 신청 취소
         async function cancelEnrollment(enrollmentId) {
+            if (!enrollAllowed) {
+                alert('신청 가능한 시간이 아닙니다.');
+                return;
+            }
             if (!confirm('정말 취소하시겠습니까?')) return;
             
             const response = await fetch('/api/cancel', {
@@ -275,7 +338,9 @@
             setTimeout(() => msgDiv.textContent = '', 3000);
         }
 
-        loadCourses();
+        // 10초마다 시간 정보 갱신
+        loadTimeInfo();
+        setInterval(loadTimeInfo, 10000);
     </script>
 </body>
 </html>

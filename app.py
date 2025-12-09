@@ -1,8 +1,12 @@
-from flask import Flask, jsonify, request, render_template
+from flask import Flask, jsonify, request, render_template, session, redirect, url_for
 import sqlite3
 
 app = Flask(__name__)
 app.config['JSON_AS_ASCII'] = False
+app.secret_key = 'your-secret-key-12345'
+
+# ============ 관리자 비밀번호 설정 ============
+ADMIN_PASSWORD = '1234'  # 원하는 비밀번호로 변경!
 
 # ============ DB 연결 함수 ============
 def get_db():
@@ -68,10 +72,30 @@ def enroll():
 def home():
     return render_template('index.html')
 
-# ============ 관리자 페이지 ============
+# ============ 관리자 로그인 페이지 ============
 @app.route('/admin')
 def admin():
-    return render_template('admin.html')
+    if session.get('admin_logged_in'):
+        return render_template('admin.html')
+    return render_template('admin_login.html')
+
+# ============ 관리자 로그인 처리 ============
+@app.route('/admin/login', methods=['POST'])
+def admin_login():
+    data = request.get_json()
+    password = data.get('password')
+    
+    if password == ADMIN_PASSWORD:
+        session['admin_logged_in'] = True
+        return jsonify({"success": True})
+    else:
+        return jsonify({"success": False, "message": "비밀번호가 틀렸습니다."})
+
+# ============ 관리자 로그아웃 ============
+@app.route('/admin/logout')
+def admin_logout():
+    session.pop('admin_logged_in', None)
+    return redirect('/admin')
 
 # ============ API: 강좌 추가 ============
 @app.route('/api/admin/course', methods=['POST'])

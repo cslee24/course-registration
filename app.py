@@ -1,10 +1,46 @@
 from flask import Flask, jsonify, request, render_template, session, redirect, url_for
 import sqlite3
 from datetime import datetime
+import os
+import pathlib
+import requests
+from google.oauth2 import id_token
+from google_auth_oauthlib.flow import Flow
+import google.auth.transport.requests
+import certifi
+
+# SSL 인증서 경로 설정
+os.environ['SSL_CERT_FILE'] = certifi.where()
+os.environ['REQUESTS_CA_BUNDLE'] = certifi.where()
 
 app = Flask(__name__)
 app.config['JSON_AS_ASCII'] = False
 app.secret_key = 'your-secret-key-12345'
+
+
+# ============ Google OAuth 설정 ============
+GOOGLE_CLIENT_ID = "52508210754-0b48t9qq6m6jpudvd0j9up5ss7rp85c1.apps.googleusercontent.com"
+GOOGLE_CLIENT_SECRET = "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"
+ALLOWED_DOMAIN = "jeongeui.sen.ms.kr"  # 학교 도메인
+
+# 개발/배포 환경 자동 감지
+if os.environ.get('RENDER'):
+    REDIRECT_URI = "https://course-registration-68kh.onrender.com/callback"
+    os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '0'
+else:
+    REDIRECT_URI = "http://127.0.0.1:5000/callback"
+    os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'  # 개발용 HTTP 허용
+
+# OAuth 클라이언트 설정
+client_config = {
+    "web": {
+        "client_id": GOOGLE_CLIENT_ID,
+        "client_secret": GOOGLE_CLIENT_SECRET,
+        "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+        "token_uri": "https://oauth2.googleapis.com/token",
+        "redirect_uris": [REDIRECT_URI]
+    }
+}
 
 ADMIN_PASSWORD = '1234'
 
@@ -51,6 +87,82 @@ def check_enroll_time():
             "end": settings['enroll_end']
         }
 
+# ============ Google 로그인 ============
+@app.route('/login')
+def login():
+    flow = Flow.from_client_config(
+        client_config,
+        scopes=['openid', 'https://www.googleapis.com/auth/userinfo.email', 'https://www.googleapis.com/auth/userinfo.profile']
+    )
+    flow.redirect_uri = REDIRECT_URI
+    
+    authorization_url, state = flow.authorization_url(
+        access_type='offline',
+        include_granted_scopes='true',
+        prompt='select_account'
+    )
+    
+    session['state'] = state
+    return redirect(authorization_url)
+
+# ============ Google 로그인 콜백 ============
+@app.route('/callback')
+def callback():
+    flow = Flow.from_client_config(
+        client_config,
+        scopes=['openid', 'https://www.googleapis.com/auth/userinfo.email', 'https://www.googleapis.com/auth/userinfo.profile'],
+        state=session.get('state')
+    )
+    flow.redirect_uri = REDIRECT_URI
+    
+    authorization_response = request.url
+    if request.url.startswith('http://') and os.environ.get('RENDER'):
+        authorization_response = request.url.replace('http://', 'https://', 1)
+    
+    flow.fetch_token(authorization_response=authorization_response)
+    credentials = flow.credentials
+    
+    # 사용자 정보 가져오기
+    request_session = requests.Session()
+    token_request = google.auth.transport.requests.Request(session=request_session)
+    
+    id_info = id_token.verify_oauth2_token(
+        credentials.id_token,
+        token_request,
+        GOOGLE_CLIENT_ID
+    )
+    
+    email = id_info.get('email', '')
+    name = id_info.get('name', '')
+    
+    # 학교 도메인 확인
+    if not email.endswith('@' + ALLOWED_DOMAIN):
+        return render_template('login_error.html', 
+            message=f"학교 계정(@{ALLOWED_DOMAIN})으로만 로그인할 수 있습니다.")
+    
+    # 세션에 사용자 정보 저장
+    session['user'] = {
+        'email': email,
+        'name': name,
+        'student_id': email.split('@')[0]  # 이메일 앞부분을 학번으로 사용
+    }
+    
+    return redirect('/')
+
+# ============ 로그아웃 ============
+@app.route('/logout')
+def logout():
+    session.pop('user', None)
+    return redirect('/')
+
+# ============ API: 현재 로그인 정보 ============
+@app.route('/api/user', methods=['GET'])
+def get_user():
+    user = session.get('user')
+    if user:
+        return jsonify({"logged_in": True, "user": user})
+    return jsonify({"logged_in": False})
+
 # ============ API: 신청 시간 정보 ============
 @app.route('/api/enroll-time', methods=['GET'])
 def get_enroll_time():
@@ -69,6 +181,11 @@ def get_courses():
 # ============ API 2: 수강신청 ============
 @app.route('/api/enroll', methods=['POST'])
 def enroll():
+    # 로그인 확인
+    user = session.get('user')
+    if not user:
+        return jsonify({"success": False, "message": "로그인이 필요합니다."})
+    
     # 시간 확인
     time_check = check_enroll_time()
     if not time_check['allowed']:
@@ -76,11 +193,8 @@ def enroll():
     
     data = request.get_json()
     course_id = data.get('course_id')
-    student_id = data.get('student_id')
-    student_name = data.get('student_name')
-    
-    if not student_id or not student_name:
-        return jsonify({"success": False, "message": "학번과 이름을 입력하세요."})
+    student_id = user['student_id']
+    student_name = user['name']
     
     conn = get_db()
     cursor = conn.cursor()
@@ -132,13 +246,13 @@ def enroll():
         return jsonify({"success": False, "message": "오류가 발생했습니다."})
 
 # ============ API: 내 신청 목록 조회 ============
-@app.route('/api/my-enrollments', methods=['POST'])
+@app.route('/api/my-enrollments', methods=['GET'])
 def my_enrollments():
-    data = request.get_json()
-    student_id = data.get('student_id')
-    
-    if not student_id:
+    user = session.get('user')
+    if not user:
         return jsonify([])
+    
+    student_id = user['student_id']
     
     conn = get_db()
     cursor = conn.cursor()
@@ -157,14 +271,17 @@ def my_enrollments():
 # ============ API: 신청 취소 ============
 @app.route('/api/cancel', methods=['POST'])
 def cancel_enrollment():
-    # 시간 확인
+    user = session.get('user')
+    if not user:
+        return jsonify({"success": False, "message": "로그인이 필요합니다."})
+    
     time_check = check_enroll_time()
     if not time_check['allowed']:
         return jsonify({"success": False, "message": time_check['message']})
     
     data = request.get_json()
     enrollment_id = data.get('enrollment_id')
-    student_id = data.get('student_id')
+    student_id = user['student_id']
     
     conn = get_db()
     cursor = conn.cursor()

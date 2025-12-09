@@ -178,5 +178,74 @@ def get_enrollments(course_id):
     conn.close()
     return jsonify(enrollments)
 
+# ============ API: 내 신청 목록 조회 ============
+@app.route('/api/my-enrollments', methods=['POST'])
+def my_enrollments():
+    data = request.get_json()
+    student_id = data.get('student_id')
+    
+    if not student_id:
+        return jsonify([])
+    
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute('''
+        SELECT e.id, e.course_id, c.name as course_name, e.enrolled_at
+        FROM enrollments e
+        JOIN courses c ON e.course_id = c.id
+        WHERE e.student_id = ?
+        ORDER BY e.enrolled_at DESC
+    ''', (student_id,))
+    enrollments = [dict(row) for row in cursor.fetchall()]
+    conn.close()
+    
+    return jsonify(enrollments)
+
+# ============ API: 신청 취소 ============
+@app.route('/api/cancel', methods=['POST'])
+def cancel_enrollment():
+    data = request.get_json()
+    enrollment_id = data.get('enrollment_id')
+    student_id = data.get('student_id')
+    
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    try:
+        cursor.execute('BEGIN IMMEDIATE')
+        
+        # 신청 내역 확인 (본인 것인지)
+        cursor.execute(
+            'SELECT * FROM enrollments WHERE id = ? AND student_id = ?',
+            (enrollment_id, student_id)
+        )
+        enrollment = cursor.fetchone()
+        
+        if not enrollment:
+            conn.rollback()
+            conn.close()
+            return jsonify({"success": False, "message": "신청 내역을 찾을 수 없습니다."})
+        
+        course_id = enrollment['course_id']
+        
+        # 신청 삭제
+        cursor.execute('DELETE FROM enrollments WHERE id = ?', (enrollment_id,))
+        
+        # 강좌 인원 감소
+        cursor.execute(
+            'UPDATE courses SET enrolled = enrolled - 1 WHERE id = ?',
+            (course_id,)
+        )
+        
+        conn.commit()
+        conn.close()
+        return jsonify({"success": True, "message": "신청이 취소되었습니다."})
+        
+    except Exception as e:
+        conn.rollback()
+        conn.close()
+        return jsonify({"success": False, "message": "오류가 발생했습니다."})
+
+
 if __name__ == '__main__':
     app.run(debug=True)

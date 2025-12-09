@@ -61,7 +61,10 @@ def check_enroll_time():
     if not settings or not settings['enroll_start'] or not settings['enroll_end']:
         return {"allowed": False, "message": "신청 시간이 설정되지 않았습니다.", "start": None, "end": None}
     
-    now = datetime.now()
+     # 한국 시간으로 변환 (UTC+9)
+    from datetime import timedelta
+    now = datetime.now() + timedelta(hours=9)
+    
     start = datetime.strptime(settings['enroll_start'], '%Y-%m-%dT%H:%M')
     end = datetime.strptime(settings['enroll_end'], '%Y-%m-%dT%H:%M')
     

@@ -68,5 +68,50 @@ def enroll():
 def home():
     return render_template('index.html')
 
+# ============ 관리자 페이지 ============
+@app.route('/admin')
+def admin():
+    return render_template('admin.html')
+
+# ============ API: 강좌 추가 ============
+@app.route('/api/admin/course', methods=['POST'])
+def add_course():
+    data = request.get_json()
+    name = data.get('name')
+    limit = data.get('limit')
+    
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute(
+        'INSERT INTO courses (name, limit_num, enrolled) VALUES (?, ?, 0)',
+        (name, limit)
+    )
+    conn.commit()
+    conn.close()
+    
+    return jsonify({"success": True, "message": f"'{name}' 강좌 추가 완료!"})
+
+# ============ API: 강좌 삭제 ============
+@app.route('/api/admin/course/<int:course_id>', methods=['DELETE'])
+def delete_course(course_id):
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute('DELETE FROM courses WHERE id = ?', (course_id,))
+    conn.commit()
+    conn.close()
+    
+    return jsonify({"success": True, "message": "강좌 삭제 완료!"})
+
+# ============ API: 신청 인원 초기화 ============
+@app.route('/api/admin/course/<int:course_id>/reset', methods=['POST'])
+def reset_course(course_id):
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute('UPDATE courses SET enrolled = 0 WHERE id = ?', (course_id,))
+    conn.commit()
+    conn.close()
+    
+    return jsonify({"success": True, "message": "신청 인원 초기화 완료!"})
+
 if __name__ == '__main__':
     app.run(debug=True)

@@ -6,7 +6,7 @@ app.config['JSON_AS_ASCII'] = False
 app.secret_key = 'your-secret-key-12345'
 
 # ============ 관리자 비밀번호 설정 ============
-ADMIN_PASSWORD = '1234'  # 원하는 비밀번호로 변경!
+ADMIN_PASSWORD = '1234'
 
 # ============ DB 연결 함수 ============
 def get_db():
@@ -24,11 +24,17 @@ def get_courses():
     conn.close()
     return jsonify(courses)
 
-# ============ API 2: 수강신청 (동시접속 안전) ============
+# ============ API 2: 수강신청 (학생 정보 저장) ============
 @app.route('/api/enroll', methods=['POST'])
 def enroll():
     data = request.get_json()
     course_id = data.get('course_id')
+    student_id = data.get('student_id')
+    student_name = data.get('student_name')
+    
+    # 입력 확인
+    if not student_id or not student_name:
+        return jsonify({"success": False, "message": "학번과 이름을 입력하세요."})
     
     conn = get_db()
     cursor = conn.cursor()
@@ -36,6 +42,7 @@ def enroll():
     try:
         cursor.execute('BEGIN IMMEDIATE')
         
+        # 강좌 정보 조회
         cursor.execute('SELECT * FROM courses WHERE id = ?', (course_id,))
         course = cursor.fetchone()
         
@@ -44,24 +51,39 @@ def enroll():
             conn.close()
             return jsonify({"success": False, "message": "강좌를 찾을 수 없습니다."})
         
-        if course['enrolled'] < course['limit_num']:
-            cursor.execute(
-                'UPDATE courses SET enrolled = enrolled + 1 WHERE id = ?', 
-                (course_id,)
-            )
-            conn.commit()
-            conn.close()
-            return jsonify({
-                "success": True,
-                "message": f"{course['name']} 신청 완료!"
-            })
-        else:
+        # 중복 신청 확인
+        cursor.execute(
+            'SELECT * FROM enrollments WHERE course_id = ? AND student_id = ?',
+            (course_id, student_id)
+        )
+        if cursor.fetchone():
             conn.rollback()
             conn.close()
-            return jsonify({
-                "success": False,
-                "message": "마감되었습니다."
-            })
+            return jsonify({"success": False, "message": "이미 신청한 강좌입니다."})
+        
+        # 자리 확인
+        if course['enrolled'] >= course['limit_num']:
+            conn.rollback()
+            conn.close()
+            return jsonify({"success": False, "message": "마감되었습니다."})
+        
+        # 신청 처리
+        cursor.execute(
+            'INSERT INTO enrollments (course_id, student_id, student_name) VALUES (?, ?, ?)',
+            (course_id, student_id, student_name)
+        )
+        cursor.execute(
+            'UPDATE courses SET enrolled = enrolled + 1 WHERE id = ?',
+            (course_id,)
+        )
+        
+        conn.commit()
+        conn.close()
+        return jsonify({
+            "success": True,
+            "message": f"{course['name']} 신청 완료!"
+        })
+        
     except Exception as e:
         conn.rollback()
         conn.close()
@@ -120,6 +142,8 @@ def add_course():
 def delete_course(course_id):
     conn = get_db()
     cursor = conn.cursor()
+    # 신청 내역도 함께 삭제
+    cursor.execute('DELETE FROM enrollments WHERE course_id = ?', (course_id,))
     cursor.execute('DELETE FROM courses WHERE id = ?', (course_id,))
     conn.commit()
     conn.close()
@@ -131,11 +155,28 @@ def delete_course(course_id):
 def reset_course(course_id):
     conn = get_db()
     cursor = conn.cursor()
+    # 신청 내역도 함께 삭제
+    cursor.execute('DELETE FROM enrollments WHERE course_id = ?', (course_id,))
     cursor.execute('UPDATE courses SET enrolled = 0 WHERE id = ?', (course_id,))
     conn.commit()
     conn.close()
     
     return jsonify({"success": True, "message": "신청 인원 초기화 완료!"})
+
+# ============ API: 강좌별 신청자 목록 ============
+@app.route('/api/admin/course/<int:course_id>/enrollments', methods=['GET'])
+def get_enrollments(course_id):
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute('''
+        SELECT student_id, student_name, enrolled_at 
+        FROM enrollments 
+        WHERE course_id = ? 
+        ORDER BY enrolled_at
+    ''', (course_id,))
+    enrollments = [dict(row) for row in cursor.fetchall()]
+    conn.close()
+    return jsonify(enrollments)
 
 if __name__ == '__main__':
     app.run(debug=True)

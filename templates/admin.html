@@ -7,7 +7,7 @@
     <style>
         body {
             font-family: 'Segoe UI', sans-serif;
-            max-width: 800px;
+            max-width: 900px;
             margin: 50px auto;
             padding: 20px;
             background-color: #2c3e50;
@@ -15,7 +15,6 @@
         }
         h1 { text-align: center; }
         
-        /* 강좌 추가 폼 */
         .add-form {
             background: #34495e;
             padding: 20px;
@@ -37,15 +36,14 @@
             border-radius: 4px;
             cursor: pointer;
         }
-        .add-form button:hover { background-color: #2ecc71; }
         
-        /* 테이블 */
         table {
             width: 100%;
             border-collapse: collapse;
             background: #34495e;
             border-radius: 8px;
             overflow: hidden;
+            margin-bottom: 20px;
         }
         th, td {
             padding: 15px;
@@ -54,20 +52,18 @@
         }
         th { background-color: #1a252f; }
         
-        /* 버튼 */
         .btn {
-            padding: 8px 15px;
+            padding: 8px 12px;
             border: none;
             border-radius: 4px;
             cursor: pointer;
             margin: 2px;
+            font-size: 12px;
         }
+        .btn-view { background-color: #3498db; color: white; }
         .btn-reset { background-color: #f39c12; color: white; }
         .btn-delete { background-color: #e74c3c; color: white; }
-        .btn-reset:hover { background-color: #f1c40f; }
-        .btn-delete:hover { background-color: #c0392b; }
         
-        /* 메시지 */
         .message {
             text-align: center;
             padding: 10px;
@@ -77,21 +73,64 @@
         .success { background-color: #27ae60; }
         .error { background-color: #e74c3c; }
         
-        /* 홈 링크 */
-        .home-link {
-            display: block;
+        .home-link { display: block; text-align: center; margin-top: 20px; color: #3498db; }
+        .logout-link { color: #e74c3c; float: right; margin-top: -40px; }
+        
+        /* 모달 */
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            background: rgba(0,0,0,0.7);
+            justify-content: center;
+            align-items: center;
+        }
+        .modal-content {
+            background: #34495e;
+            padding: 30px;
+            border-radius: 10px;
+            max-width: 500px;
+            width: 90%;
+            max-height: 70vh;
+            overflow-y: auto;
+        }
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        .modal-close {
+            background: #e74c3c;
+            color: white;
+            border: none;
+            padding: 5px 15px;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        .enrollment-list {
+            list-style: none;
+            padding: 0;
+        }
+        .enrollment-list li {
+            padding: 10px;
+            background: #1a252f;
+            margin: 5px 0;
+            border-radius: 4px;
+        }
+        .enrollment-list .no-data {
+            color: #95a5a6;
             text-align: center;
-            margin-top: 20px;
-            color: #3498db;
         }
     </style>
 </head>
 <body>
     <h1>🔧 관리자 페이지</h1>
-    <a href="/admin/logout" style="color: #e74c3c; float: right; margin-top: -40px;">로그아웃</a>
+    <a href="/admin/logout" class="logout-link">로그아웃</a>
+    
     <div id="message"></div>
     
-    <!-- 강좌 추가 폼 -->
     <div class="add-form">
         <h3>➕ 강좌 추가</h3>
         <input type="text" id="courseName" placeholder="강좌명">
@@ -99,7 +138,6 @@
         <button onclick="addCourse()">추가</button>
     </div>
     
-    <!-- 강좌 목록 테이블 -->
     <table>
         <thead>
             <tr>
@@ -114,8 +152,18 @@
     
     <a href="/" class="home-link">← 수강신청 페이지로 돌아가기</a>
 
+    <!-- 신청자 목록 모달 -->
+    <div id="modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="modalTitle">신청자 목록</h3>
+                <button class="modal-close" onclick="closeModal()">닫기</button>
+            </div>
+            <ul id="enrollmentList" class="enrollment-list"></ul>
+        </div>
+    </div>
+
     <script>
-        // 강좌 목록 불러오기
         async function loadCourses() {
             const response = await fetch('/api/courses');
             const courses = await response.json();
@@ -130,6 +178,7 @@
                     <td>${course.name}</td>
                     <td>${course.enrolled}/${course.limit}명</td>
                     <td>
+                        <button class="btn btn-view" onclick="viewEnrollments(${course.id}, '${course.name}')">목록</button>
                         <button class="btn btn-reset" onclick="resetCourse(${course.id})">초기화</button>
                         <button class="btn btn-delete" onclick="deleteCourse(${course.id})">삭제</button>
                     </td>
@@ -138,7 +187,6 @@
             });
         }
 
-        // 메시지 표시
         function showMessage(text, isSuccess) {
             const msgDiv = document.getElementById('message');
             msgDiv.className = 'message ' + (isSuccess ? 'success' : 'error');
@@ -146,7 +194,6 @@
             setTimeout(() => msgDiv.textContent = '', 3000);
         }
 
-        // 강좌 추가
         async function addCourse() {
             const name = document.getElementById('courseName').value;
             const limit = document.getElementById('courseLimit').value;
@@ -171,33 +218,53 @@
             }
         }
 
-        // 강좌 초기화
         async function resetCourse(id) {
-            if (!confirm('이 강좌의 신청 인원을 0으로 초기화할까요?')) return;
+            if (!confirm('이 강좌의 신청 내역을 모두 삭제할까요?')) return;
             
-            const response = await fetch(`/api/admin/course/${id}/reset`, {
-                method: 'POST'
-            });
+            const response = await fetch(`/api/admin/course/${id}/reset`, { method: 'POST' });
             const result = await response.json();
             
             showMessage(result.message, result.success);
             loadCourses();
         }
 
-        // 강좌 삭제
         async function deleteCourse(id) {
             if (!confirm('정말 이 강좌를 삭제할까요?')) return;
             
-            const response = await fetch(`/api/admin/course/${id}`, {
-                method: 'DELETE'
-            });
+            const response = await fetch(`/api/admin/course/${id}`, { method: 'DELETE' });
             const result = await response.json();
             
             showMessage(result.message, result.success);
             loadCourses();
         }
 
-        // 페이지 로드 시
+        // 신청자 목록 보기
+        async function viewEnrollments(courseId, courseName) {
+            const response = await fetch(`/api/admin/course/${courseId}/enrollments`);
+            const enrollments = await response.json();
+            
+            document.getElementById('modalTitle').textContent = `📋 ${courseName} 신청자 목록`;
+            
+            const list = document.getElementById('enrollmentList');
+            list.innerHTML = '';
+            
+            if (enrollments.length === 0) {
+                list.innerHTML = '<li class="no-data">신청자가 없습니다.</li>';
+            } else {
+                enrollments.forEach((e, index) => {
+                    const li = document.createElement('li');
+                    li.textContent = `${index + 1}. ${e.student_id} - ${e.student_name} (${e.enrolled_at})`;
+                    list.appendChild(li);
+                });
+            }
+            
+            document.getElementById('modal').style.display = 'flex';
+        }
+
+        function closeModal() {
+            document.getElementById('modal').style.display = 'none';
+        }
+
         loadCourses();
     </script>
 </body>

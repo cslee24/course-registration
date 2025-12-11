@@ -1,8 +1,6 @@
-from flask import Flask, jsonify, request, render_template, session, redirect, url_for
-import sqlite3
-from datetime import datetime
+from flask import Flask, jsonify, request, render_template, session, redirect, url_for, send_file
+from datetime import datetime, timedelta
 import os
-import pathlib
 import requests
 from google.oauth2 import id_token
 from google_auth_oauthlib.flow import Flow
@@ -10,30 +8,27 @@ import google.auth.transport.requests
 import certifi
 from io import BytesIO
 from openpyxl import Workbook
-from flask import send_file
+
 # SSL 인증서 경로 설정
 os.environ['SSL_CERT_FILE'] = certifi.where()
 os.environ['REQUESTS_CA_BUNDLE'] = certifi.where()
 
 app = Flask(__name__)
 app.config['JSON_AS_ASCII'] = False
-app.secret_key = 'your-secret-key-12345'
-
+app.secret_key = os.environ.get('SECRET_KEY', 'your-secret-key-12345')
 
 # ============ Google OAuth 설정 ============
 GOOGLE_CLIENT_ID = "52508210754-0b48t9qq6m6jpudvd0j9up5ss7rp85c1.apps.googleusercontent.com"
 GOOGLE_CLIENT_SECRET = "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"
-ALLOWED_DOMAIN = "jeongeui.sen.ms.kr"  # 학교 도메인
+ALLOWED_DOMAIN = "jeongeui.sen.ms.kr"
 
-# 개발/배포 환경 자동 감지
 if os.environ.get('RENDER'):
     REDIRECT_URI = "https://course-registration-68kh.onrender.com/callback"
     os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '0'
 else:
     REDIRECT_URI = "http://127.0.0.1:5000/callback"
-    os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'  # 개발용 HTTP 허용
+    os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
 
-# OAuth 클라이언트 설정
 client_config = {
     "web": {
         "client_id": GOOGLE_CLIENT_ID,
@@ -48,9 +43,21 @@ ADMIN_PASSWORD = '1234'
 
 # ============ DB 연결 함수 ============
 def get_db():
-    conn = sqlite3.connect('courses.db')
-    conn.row_factory = sqlite3.Row
-    return conn
+    database_url = os.environ.get('DATABASE_URL')
+    
+    if database_url:
+        import psycopg2
+        from psycopg2.extras import RealDictCursor
+        conn = psycopg2.connect(database_url, cursor_factory=RealDictCursor)
+        return conn
+    else:
+        import sqlite3
+        conn = sqlite3.connect('courses.db')
+        conn.row_factory = sqlite3.Row
+        return conn
+
+def is_postgres():
+    return os.environ.get('DATABASE_URL') is not None
 
 # ============ 신청 가능 시간 확인 함수 ============
 def check_enroll_time():
@@ -63,33 +70,39 @@ def check_enroll_time():
     if not settings or not settings['enroll_start'] or not settings['enroll_end']:
         return {"allowed": False, "message": "신청 시간이 설정되지 않았습니다.", "start": None, "end": None}
     
-     # 한국 시간으로 변환 (UTC+9)
-    from datetime import timedelta
-    now = datetime.now() + timedelta(hours=9)
+    # 한국 시간 (UTC+9)
+    now = datetime.utcnow() + timedelta(hours=9)
     
-    start = datetime.strptime(settings['enroll_start'], '%Y-%m-%dT%H:%M')
-    end = datetime.strptime(settings['enroll_end'], '%Y-%m-%dT%H:%M')
+    start_str = settings['enroll_start']
+    end_str = settings['enroll_end']
+    
+    if isinstance(start_str, str):
+        start = datetime.strptime(start_str, '%Y-%m-%dT%H:%M')
+        end = datetime.strptime(end_str, '%Y-%m-%dT%H:%M')
+    else:
+        start = start_str
+        end = end_str
     
     if now < start:
         return {
             "allowed": False, 
-            "message": f"신청 시작 전입니다.",
-            "start": settings['enroll_start'],
-            "end": settings['enroll_end']
+            "message": "신청 시작 전입니다.",
+            "start": start_str if isinstance(start_str, str) else start_str.strftime('%Y-%m-%dT%H:%M'),
+            "end": end_str if isinstance(end_str, str) else end_str.strftime('%Y-%m-%dT%H:%M')
         }
     elif now > end:
         return {
             "allowed": False, 
             "message": "신청이 마감되었습니다.",
-            "start": settings['enroll_start'],
-            "end": settings['enroll_end']
+            "start": start_str if isinstance(start_str, str) else start_str.strftime('%Y-%m-%dT%H:%M'),
+            "end": end_str if isinstance(end_str, str) else end_str.strftime('%Y-%m-%dT%H:%M')
         }
     else:
         return {
             "allowed": True, 
             "message": "신청 가능",
-            "start": settings['enroll_start'],
-            "end": settings['enroll_end']
+            "start": start_str if isinstance(start_str, str) else start_str.strftime('%Y-%m-%dT%H:%M'),
+            "end": end_str if isinstance(end_str, str) else end_str.strftime('%Y-%m-%dT%H:%M')
         }
 
 # ============ Google 로그인 ============
@@ -110,7 +123,6 @@ def login():
     session['state'] = state
     return redirect(authorization_url)
 
-# ============ Google 로그인 콜백 ============
 @app.route('/callback')
 def callback():
     flow = Flow.from_client_config(
@@ -127,7 +139,6 @@ def callback():
     flow.fetch_token(authorization_response=authorization_response)
     credentials = flow.credentials
     
-    # 사용자 정보 가져오기
     request_session = requests.Session()
     token_request = google.auth.transport.requests.Request(session=request_session)
     
@@ -140,27 +151,23 @@ def callback():
     email = id_info.get('email', '')
     name = id_info.get('name', '')
     
-    # 학교 도메인 확인
     if not email.endswith('@' + ALLOWED_DOMAIN):
         return render_template('login_error.html', 
             message=f"학교 계정(@{ALLOWED_DOMAIN})으로만 로그인할 수 있습니다.")
     
-    # 세션에 사용자 정보 저장
     session['user'] = {
         'email': email,
         'name': name,
-        'student_id': email.split('@')[0]  # 이메일 앞부분을 학번으로 사용
+        'student_id': email.split('@')[0]
     }
     
     return redirect('/')
 
-# ============ 로그아웃 ============
 @app.route('/logout')
 def logout():
     session.pop('user', None)
     return redirect('/')
 
-# ============ API: 현재 로그인 정보 ============
 @app.route('/api/user', methods=['GET'])
 def get_user():
     user = session.get('user')
@@ -168,30 +175,30 @@ def get_user():
         return jsonify({"logged_in": True, "user": user})
     return jsonify({"logged_in": False})
 
-# ============ API: 신청 시간 정보 ============
 @app.route('/api/enroll-time', methods=['GET'])
 def get_enroll_time():
     return jsonify(check_enroll_time())
 
-# ============ API 1: 강좌 목록 조회 ============
 @app.route('/api/courses', methods=['GET'])
 def get_courses():
     conn = get_db()
     cursor = conn.cursor()
-    cursor.execute('SELECT id, name, limit_num as "limit", enrolled FROM courses')
+    
+    if is_postgres():
+        cursor.execute('SELECT id, name, limit_num as "limit", enrolled FROM courses')
+    else:
+        cursor.execute('SELECT id, name, limit_num as "limit", enrolled FROM courses')
+    
     courses = [dict(row) for row in cursor.fetchall()]
     conn.close()
     return jsonify(courses)
 
-# ============ API 2: 수강신청 ============
 @app.route('/api/enroll', methods=['POST'])
 def enroll():
-    # 로그인 확인
     user = session.get('user')
     if not user:
         return jsonify({"success": False, "message": "로그인이 필요합니다."})
     
-    # 시간 확인
     time_check = check_enroll_time()
     if not time_check['allowed']:
         return jsonify({"success": False, "message": time_check['message']})
@@ -205,9 +212,12 @@ def enroll():
     cursor = conn.cursor()
     
     try:
-        cursor.execute('BEGIN IMMEDIATE')
+        if is_postgres():
+            cursor.execute('SELECT * FROM courses WHERE id = %s FOR UPDATE', (course_id,))
+        else:
+            cursor.execute('BEGIN IMMEDIATE')
+            cursor.execute('SELECT * FROM courses WHERE id = ?', (course_id,))
         
-        cursor.execute('SELECT * FROM courses WHERE id = ?', (course_id,))
         course = cursor.fetchone()
         
         if course is None:
@@ -215,10 +225,17 @@ def enroll():
             conn.close()
             return jsonify({"success": False, "message": "강좌를 찾을 수 없습니다."})
         
-        cursor.execute(
-            'SELECT * FROM enrollments WHERE course_id = ? AND student_id = ?',
-            (course_id, student_id)
-        )
+        if is_postgres():
+            cursor.execute(
+                'SELECT * FROM enrollments WHERE course_id = %s AND student_id = %s',
+                (course_id, student_id)
+            )
+        else:
+            cursor.execute(
+                'SELECT * FROM enrollments WHERE course_id = ? AND student_id = ?',
+                (course_id, student_id)
+            )
+        
         if cursor.fetchone():
             conn.rollback()
             conn.close()
@@ -229,14 +246,24 @@ def enroll():
             conn.close()
             return jsonify({"success": False, "message": "마감되었습니다."})
         
-        cursor.execute(
-            'INSERT INTO enrollments (course_id, student_id, student_name) VALUES (?, ?, ?)',
-            (course_id, student_id, student_name)
-        )
-        cursor.execute(
-            'UPDATE courses SET enrolled = enrolled + 1 WHERE id = ?',
-            (course_id,)
-        )
+        if is_postgres():
+            cursor.execute(
+                'INSERT INTO enrollments (course_id, student_id, student_name) VALUES (%s, %s, %s)',
+                (course_id, student_id, student_name)
+            )
+            cursor.execute(
+                'UPDATE courses SET enrolled = enrolled + 1 WHERE id = %s',
+                (course_id,)
+            )
+        else:
+            cursor.execute(
+                'INSERT INTO enrollments (course_id, student_id, student_name) VALUES (?, ?, ?)',
+                (course_id, student_id, student_name)
+            )
+            cursor.execute(
+                'UPDATE courses SET enrolled = enrolled + 1 WHERE id = ?',
+                (course_id,)
+            )
         
         conn.commit()
         conn.close()
@@ -250,7 +277,6 @@ def enroll():
         conn.close()
         return jsonify({"success": False, "message": "오류가 발생했습니다."})
 
-# ============ API: 내 신청 목록 조회 ============
 @app.route('/api/my-enrollments', methods=['GET'])
 def my_enrollments():
     user = session.get('user')
@@ -261,19 +287,29 @@ def my_enrollments():
     
     conn = get_db()
     cursor = conn.cursor()
-    cursor.execute('''
-        SELECT e.id, e.course_id, c.name as course_name, e.enrolled_at
-        FROM enrollments e
-        JOIN courses c ON e.course_id = c.id
-        WHERE e.student_id = ?
-        ORDER BY e.enrolled_at DESC
-    ''', (student_id,))
+    
+    if is_postgres():
+        cursor.execute('''
+            SELECT e.id, e.course_id, c.name as course_name, e.enrolled_at
+            FROM enrollments e
+            JOIN courses c ON e.course_id = c.id
+            WHERE e.student_id = %s
+            ORDER BY e.enrolled_at DESC
+        ''', (student_id,))
+    else:
+        cursor.execute('''
+            SELECT e.id, e.course_id, c.name as course_name, e.enrolled_at
+            FROM enrollments e
+            JOIN courses c ON e.course_id = c.id
+            WHERE e.student_id = ?
+            ORDER BY e.enrolled_at DESC
+        ''', (student_id,))
+    
     enrollments = [dict(row) for row in cursor.fetchall()]
     conn.close()
     
     return jsonify(enrollments)
 
-# ============ API: 신청 취소 ============
 @app.route('/api/cancel', methods=['POST'])
 def cancel_enrollment():
     user = session.get('user')
@@ -292,12 +328,18 @@ def cancel_enrollment():
     cursor = conn.cursor()
     
     try:
-        cursor.execute('BEGIN IMMEDIATE')
+        if is_postgres():
+            cursor.execute(
+                'SELECT * FROM enrollments WHERE id = %s AND student_id = %s',
+                (enrollment_id, student_id)
+            )
+        else:
+            cursor.execute('BEGIN IMMEDIATE')
+            cursor.execute(
+                'SELECT * FROM enrollments WHERE id = ? AND student_id = ?',
+                (enrollment_id, student_id)
+            )
         
-        cursor.execute(
-            'SELECT * FROM enrollments WHERE id = ? AND student_id = ?',
-            (enrollment_id, student_id)
-        )
         enrollment = cursor.fetchone()
         
         if not enrollment:
@@ -307,11 +349,18 @@ def cancel_enrollment():
         
         course_id = enrollment['course_id']
         
-        cursor.execute('DELETE FROM enrollments WHERE id = ?', (enrollment_id,))
-        cursor.execute(
-            'UPDATE courses SET enrolled = enrolled - 1 WHERE id = ?',
-            (course_id,)
-        )
+        if is_postgres():
+            cursor.execute('DELETE FROM enrollments WHERE id = %s', (enrollment_id,))
+            cursor.execute(
+                'UPDATE courses SET enrolled = enrolled - 1 WHERE id = %s',
+                (course_id,)
+            )
+        else:
+            cursor.execute('DELETE FROM enrollments WHERE id = ?', (enrollment_id,))
+            cursor.execute(
+                'UPDATE courses SET enrolled = enrolled - 1 WHERE id = ?',
+                (course_id,)
+            )
         
         conn.commit()
         conn.close()
@@ -322,19 +371,16 @@ def cancel_enrollment():
         conn.close()
         return jsonify({"success": False, "message": "오류가 발생했습니다."})
 
-# ============ 메인 페이지 ============
 @app.route('/')
 def home():
     return render_template('index.html')
 
-# ============ 관리자 로그인 페이지 ============
 @app.route('/admin')
 def admin():
     if session.get('admin_logged_in'):
         return render_template('admin.html')
     return render_template('admin_login.html')
 
-# ============ 관리자 로그인 처리 ============
 @app.route('/admin/login', methods=['POST'])
 def admin_login():
     data = request.get_json()
@@ -346,13 +392,11 @@ def admin_login():
     else:
         return jsonify({"success": False, "message": "비밀번호가 틀렸습니다."})
 
-# ============ 관리자 로그아웃 ============
 @app.route('/admin/logout')
 def admin_logout():
     session.pop('admin_logged_in', None)
     return redirect('/admin')
 
-# ============ API: 강좌 추가 ============
 @app.route('/api/admin/course', methods=['POST'])
 def add_course():
     data = request.get_json()
@@ -361,55 +405,81 @@ def add_course():
     
     conn = get_db()
     cursor = conn.cursor()
-    cursor.execute(
-        'INSERT INTO courses (name, limit_num, enrolled) VALUES (?, ?, 0)',
-        (name, limit)
-    )
+    
+    if is_postgres():
+        cursor.execute(
+            'INSERT INTO courses (name, limit_num, enrolled) VALUES (%s, %s, 0)',
+            (name, limit)
+        )
+    else:
+        cursor.execute(
+            'INSERT INTO courses (name, limit_num, enrolled) VALUES (?, ?, 0)',
+            (name, limit)
+        )
+    
     conn.commit()
     conn.close()
     
     return jsonify({"success": True, "message": f"'{name}' 강좌 추가 완료!"})
 
-# ============ API: 강좌 삭제 ============
 @app.route('/api/admin/course/<int:course_id>', methods=['DELETE'])
 def delete_course(course_id):
     conn = get_db()
     cursor = conn.cursor()
-    cursor.execute('DELETE FROM enrollments WHERE course_id = ?', (course_id,))
-    cursor.execute('DELETE FROM courses WHERE id = ?', (course_id,))
+    
+    if is_postgres():
+        cursor.execute('DELETE FROM enrollments WHERE course_id = %s', (course_id,))
+        cursor.execute('DELETE FROM courses WHERE id = %s', (course_id,))
+    else:
+        cursor.execute('DELETE FROM enrollments WHERE course_id = ?', (course_id,))
+        cursor.execute('DELETE FROM courses WHERE id = ?', (course_id,))
+    
     conn.commit()
     conn.close()
     
     return jsonify({"success": True, "message": "강좌 삭제 완료!"})
 
-# ============ API: 신청 인원 초기화 ============
 @app.route('/api/admin/course/<int:course_id>/reset', methods=['POST'])
 def reset_course(course_id):
     conn = get_db()
     cursor = conn.cursor()
-    cursor.execute('DELETE FROM enrollments WHERE course_id = ?', (course_id,))
-    cursor.execute('UPDATE courses SET enrolled = 0 WHERE id = ?', (course_id,))
+    
+    if is_postgres():
+        cursor.execute('DELETE FROM enrollments WHERE course_id = %s', (course_id,))
+        cursor.execute('UPDATE courses SET enrolled = 0 WHERE id = %s', (course_id,))
+    else:
+        cursor.execute('DELETE FROM enrollments WHERE course_id = ?', (course_id,))
+        cursor.execute('UPDATE courses SET enrolled = 0 WHERE id = ?', (course_id,))
+    
     conn.commit()
     conn.close()
     
     return jsonify({"success": True, "message": "신청 인원 초기화 완료!"})
 
-# ============ API: 강좌별 신청자 목록 ============
 @app.route('/api/admin/course/<int:course_id>/enrollments', methods=['GET'])
 def get_enrollments(course_id):
     conn = get_db()
     cursor = conn.cursor()
-    cursor.execute('''
-        SELECT student_id, student_name, enrolled_at 
-        FROM enrollments 
-        WHERE course_id = ? 
-        ORDER BY enrolled_at
-    ''', (course_id,))
+    
+    if is_postgres():
+        cursor.execute('''
+            SELECT student_id, student_name, enrolled_at 
+            FROM enrollments 
+            WHERE course_id = %s 
+            ORDER BY enrolled_at
+        ''', (course_id,))
+    else:
+        cursor.execute('''
+            SELECT student_id, student_name, enrolled_at 
+            FROM enrollments 
+            WHERE course_id = ? 
+            ORDER BY enrolled_at
+        ''', (course_id,))
+    
     enrollments = [dict(row) for row in cursor.fetchall()]
     conn.close()
     return jsonify(enrollments)
 
-# ============ API: 신청 시간 설정 ============
 @app.route('/api/admin/settings/time', methods=['POST'])
 def set_enroll_time():
     data = request.get_json()
@@ -418,16 +488,23 @@ def set_enroll_time():
     
     conn = get_db()
     cursor = conn.cursor()
-    cursor.execute(
-        'UPDATE settings SET enroll_start = ?, enroll_end = ? WHERE id = 1',
-        (start, end)
-    )
+    
+    if is_postgres():
+        cursor.execute(
+            'UPDATE settings SET enroll_start = %s, enroll_end = %s WHERE id = 1',
+            (start, end)
+        )
+    else:
+        cursor.execute(
+            'UPDATE settings SET enroll_start = ?, enroll_end = ? WHERE id = 1',
+            (start, end)
+        )
+    
     conn.commit()
     conn.close()
     
     return jsonify({"success": True, "message": "신청 시간이 설정되었습니다."})
 
-# ============ API: 신청 시간 조회 (관리자용) ============
 @app.route('/api/admin/settings/time', methods=['GET'])
 def get_admin_enroll_time():
     conn = get_db()
@@ -436,10 +513,18 @@ def get_admin_enroll_time():
     settings = cursor.fetchone()
     conn.close()
     
-    return jsonify({
-        "start": settings['enroll_start'] if settings else None,
-        "end": settings['enroll_end'] if settings else None
-    })
+    if settings:
+        start = settings['enroll_start']
+        end = settings['enroll_end']
+        
+        if start and not isinstance(start, str):
+            start = start.strftime('%Y-%m-%dT%H:%M')
+        if end and not isinstance(end, str):
+            end = end.strftime('%Y-%m-%dT%H:%M')
+        
+        return jsonify({"start": start, "end": end})
+    
+    return jsonify({"start": None, "end": None})
 
 # ============ API: 전체 신청자 엑셀 다운로드 ============
 @app.route('/api/admin/download/all', methods=['GET'])
@@ -450,40 +535,28 @@ def download_all_enrollments():
     conn = get_db()
     cursor = conn.cursor()
     
-    if is_postgres():
-        cursor.execute('''
-            SELECT c.name as course_name, e.student_id, e.student_name, e.enrolled_at
-            FROM enrollments e
-            JOIN courses c ON e.course_id = c.id
-            ORDER BY c.name, e.enrolled_at
-        ''')
-    else:
-        cursor.execute('''
-            SELECT c.name as course_name, e.student_id, e.student_name, e.enrolled_at
-            FROM enrollments e
-            JOIN courses c ON e.course_id = c.id
-            ORDER BY c.name, e.enrolled_at
-        ''')
+    cursor.execute('''
+        SELECT c.name as course_name, e.student_id, e.student_name, e.enrolled_at
+        FROM enrollments e
+        JOIN courses c ON e.course_id = c.id
+        ORDER BY c.name, e.enrolled_at
+    ''')
     
     enrollments = cursor.fetchall()
     conn.close()
     
-    # 엑셀 파일 생성
     wb = Workbook()
     ws = wb.active
     ws.title = "전체 신청자"
     
-    # 헤더
     ws.append(['강좌명', '학번', '이름', '신청시간'])
     
-    # 데이터
     for row in enrollments:
         enrolled_at = row['enrolled_at']
         if enrolled_at and not isinstance(enrolled_at, str):
             enrolled_at = enrolled_at.strftime('%Y-%m-%d %H:%M:%S')
         ws.append([row['course_name'], row['student_id'], row['student_name'], enrolled_at])
     
-    # 파일 저장
     output = BytesIO()
     wb.save(output)
     output.seek(0)
@@ -504,7 +577,6 @@ def download_course_enrollments(course_id):
     conn = get_db()
     cursor = conn.cursor()
     
-    # 강좌명 조회
     if is_postgres():
         cursor.execute('SELECT name FROM courses WHERE id = %s', (course_id,))
     else:
@@ -513,7 +585,6 @@ def download_course_enrollments(course_id):
     course = cursor.fetchone()
     course_name = course['name'] if course else '강좌'
     
-    # 신청자 조회
     if is_postgres():
         cursor.execute('''
             SELECT student_id, student_name, enrolled_at
@@ -532,22 +603,18 @@ def download_course_enrollments(course_id):
     enrollments = cursor.fetchall()
     conn.close()
     
-    # 엑셀 파일 생성
     wb = Workbook()
     ws = wb.active
-    ws.title = course_name[:30]  # 시트명 최대 31자
+    ws.title = course_name[:30]
     
-    # 헤더
     ws.append(['순번', '학번', '이름', '신청시간'])
     
-    # 데이터
     for idx, row in enumerate(enrollments, 1):
         enrolled_at = row['enrolled_at']
         if enrolled_at and not isinstance(enrolled_at, str):
             enrolled_at = enrolled_at.strftime('%Y-%m-%d %H:%M:%S')
         ws.append([idx, row['student_id'], row['student_name'], enrolled_at])
     
-    # 파일 저장
     output = BytesIO()
     wb.save(output)
     output.seek(0)

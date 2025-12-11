@@ -157,9 +157,15 @@
 </head>
 <body>
     <h1>🔧 관리자 페이지</h1>
-    <a href="/admin/logout" class="logout-link">로그아웃</a>
-    
-    <div id="message"></div>
+<a href="/admin/logout" class="logout-link">로그아웃</a>
+
+<!-- 전체 다운로드 버튼 추가 -->
+<div style="text-align: center; margin: 20px 0;">
+    <a href="/api/admin/download/all" class="btn" style="background-color: #27ae60; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">
+        📥 전체 신청자 엑셀 다운로드
+    </a>
+</div>
+
     
     <!-- 신청 시간 설정 -->
     <div class="settings-box">
@@ -243,27 +249,29 @@
         }
 
         async function loadCourses() {
-            const response = await fetch('/api/courses');
-            const courses = await response.json();
-            
-            const table = document.getElementById('courseTable');
-            table.innerHTML = '';
-            
-            courses.forEach(course => {
-                const tr = document.createElement('tr');
-                tr.innerHTML = `
-                    <td>${course.id}</td>
-                    <td>${course.name}</td>
-                    <td>${course.enrolled}/${course.limit}명</td>
-                    <td>
-                        <button class="btn btn-view" onclick="viewEnrollments(${course.id}, '${course.name}')">목록</button>
-                        <button class="btn btn-reset" onclick="resetCourse(${course.id})">초기화</button>
-                        <button class="btn btn-delete" onclick="deleteCourse(${course.id})">삭제</button>
-                    </td>
-                `;
-                table.appendChild(tr);
-            });
-        }
+    const response = await fetch('/api/courses');
+    const courses = await response.json();
+    
+    const table = document.getElementById('courseTable');
+    table.innerHTML = '';
+    
+    courses.forEach(course => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+            <td>${course.id}</td>
+            <td>${course.name}</td>
+            <td>${course.enrolled}/${course.limit}명</td>
+            <td>
+                <button class="btn btn-view" onclick="viewEnrollments(${course.id}, '${course.name}')">목록</button>
+                <a href="/api/admin/download/${course.id}" class="btn" style="background-color: #17a2b8; color: white; text-decoration: none;">다운</a>
+                <button class="btn btn-reset" onclick="resetCourse(${course.id})">초기화</button>
+                <button class="btn btn-delete" onclick="deleteCourse(${course.id})">삭제</button>
+            </td>
+        `;
+        table.appendChild(tr);
+    });
+}
+
 
         function showMessage(text, isSuccess) {
             const msgDiv = document.getElementById('message');

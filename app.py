@@ -8,7 +8,9 @@ from google.oauth2 import id_token
 from google_auth_oauthlib.flow import Flow
 import google.auth.transport.requests
 import certifi
-
+from io import BytesIO
+from openpyxl import Workbook
+from flask import send_file
 # SSL 인증서 경로 설정
 os.environ['SSL_CERT_FILE'] = certifi.where()
 os.environ['REQUESTS_CA_BUNDLE'] = certifi.where()
@@ -438,6 +440,124 @@ def get_admin_enroll_time():
         "start": settings['enroll_start'] if settings else None,
         "end": settings['enroll_end'] if settings else None
     })
+
+# ============ API: 전체 신청자 엑셀 다운로드 ============
+@app.route('/api/admin/download/all', methods=['GET'])
+def download_all_enrollments():
+    if not session.get('admin_logged_in'):
+        return jsonify({"success": False, "message": "관리자 로그인 필요"})
+    
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    if is_postgres():
+        cursor.execute('''
+            SELECT c.name as course_name, e.student_id, e.student_name, e.enrolled_at
+            FROM enrollments e
+            JOIN courses c ON e.course_id = c.id
+            ORDER BY c.name, e.enrolled_at
+        ''')
+    else:
+        cursor.execute('''
+            SELECT c.name as course_name, e.student_id, e.student_name, e.enrolled_at
+            FROM enrollments e
+            JOIN courses c ON e.course_id = c.id
+            ORDER BY c.name, e.enrolled_at
+        ''')
+    
+    enrollments = cursor.fetchall()
+    conn.close()
+    
+    # 엑셀 파일 생성
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "전체 신청자"
+    
+    # 헤더
+    ws.append(['강좌명', '학번', '이름', '신청시간'])
+    
+    # 데이터
+    for row in enrollments:
+        enrolled_at = row['enrolled_at']
+        if enrolled_at and not isinstance(enrolled_at, str):
+            enrolled_at = enrolled_at.strftime('%Y-%m-%d %H:%M:%S')
+        ws.append([row['course_name'], row['student_id'], row['student_name'], enrolled_at])
+    
+    # 파일 저장
+    output = BytesIO()
+    wb.save(output)
+    output.seek(0)
+    
+    return send_file(
+        output,
+        mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        as_attachment=True,
+        download_name='전체_신청자_목록.xlsx'
+    )
+
+# ============ API: 강좌별 신청자 엑셀 다운로드 ============
+@app.route('/api/admin/download/<int:course_id>', methods=['GET'])
+def download_course_enrollments(course_id):
+    if not session.get('admin_logged_in'):
+        return jsonify({"success": False, "message": "관리자 로그인 필요"})
+    
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    # 강좌명 조회
+    if is_postgres():
+        cursor.execute('SELECT name FROM courses WHERE id = %s', (course_id,))
+    else:
+        cursor.execute('SELECT name FROM courses WHERE id = ?', (course_id,))
+    
+    course = cursor.fetchone()
+    course_name = course['name'] if course else '강좌'
+    
+    # 신청자 조회
+    if is_postgres():
+        cursor.execute('''
+            SELECT student_id, student_name, enrolled_at
+            FROM enrollments
+            WHERE course_id = %s
+            ORDER BY enrolled_at
+        ''', (course_id,))
+    else:
+        cursor.execute('''
+            SELECT student_id, student_name, enrolled_at
+            FROM enrollments
+            WHERE course_id = ?
+            ORDER BY enrolled_at
+        ''', (course_id,))
+    
+    enrollments = cursor.fetchall()
+    conn.close()
+    
+    # 엑셀 파일 생성
+    wb = Workbook()
+    ws = wb.active
+    ws.title = course_name[:30]  # 시트명 최대 31자
+    
+    # 헤더
+    ws.append(['순번', '학번', '이름', '신청시간'])
+    
+    # 데이터
+    for idx, row in enumerate(enrollments, 1):
+        enrolled_at = row['enrolled_at']
+        if enrolled_at and not isinstance(enrolled_at, str):
+            enrolled_at = enrolled_at.strftime('%Y-%m-%d %H:%M:%S')
+        ws.append([idx, row['student_id'], row['student_name'], enrolled_at])
+    
+    # 파일 저장
+    output = BytesIO()
+    wb.save(output)
+    output.seek(0)
+    
+    return send_file(
+        output,
+        mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        as_attachment=True,
+        download_name=f'{course_name}_신청자_목록.xlsx'
+    )
 
 if __name__ == '__main__':
     app.run(debug=True)

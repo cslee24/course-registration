@@ -153,6 +153,41 @@
             color: #95a5a6;
             text-align: center;
         }
+
+        /* 위험 구역 스타일 추가 */
+        .danger-zone {
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            border: 2px solid #e74c3c;
+            border-radius: 10px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+        .danger-zone h4 {
+            color: #e74c3c;
+            margin: 0 0 10px 0;
+            font-size: 16px;
+        }
+        .danger-zone p {
+            color: #bdc3c7;
+            margin: 0 0 15px 0;
+            font-size: 14px;
+        }
+        .btn-danger-large {
+            background: linear-gradient(135deg, #c0392b 0%, #e74c3c 100%);
+            color: white;
+            padding: 12px 24px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 15px;
+            font-weight: bold;
+            transition: all 0.3s ease;
+        }
+        .btn-danger-large:hover {
+            background: linear-gradient(135deg, #a93226 0%, #c0392b 100%);
+            transform: translateY(-2px);
+            box-shadow: 0 4px 15px rgba(231, 76, 60, 0.4);
+        }
     </style>
 </head>
 <body>
@@ -187,6 +222,15 @@
         <input type="text" id="courseName" placeholder="강좌명">
         <input type="number" id="courseLimit" placeholder="정원" min="1">
         <button onclick="addCourse()">추가</button>
+    </div>
+
+    <!-- ⚠️ 위험 구역 - 일괄 삭제 -->
+    <div class="danger-zone">
+        <h4>⚠️ 위험 구역</h4>
+        <p>모든 강좌와 수강신청 내역이 삭제됩니다. 이 작업은 되돌릴 수 없습니다.</p>
+        <button class="btn-danger-large" onclick="deleteAllCourses()">
+            🗑️ 모든 강좌 일괄 삭제
+        </button>
     </div>
     
     <!-- 강좌 목록 테이블 -->
@@ -326,16 +370,38 @@
         async function deleteCourse(id) {
             if (!confirm('정말 이 강좌를 삭제할까요?')) return;
             
-            const response = await fetch(`/api/admin/course/${id}`, { method: 'DELETE' });
+            const response = await fetch(`/api/admin/course/$${id}`, { method: 'DELETE' });
             const result = await response.json();
             
             showMessage(result.message, result.success);
             loadCourses();
         }
 
+        // 🗑️ 모든 강좌 일괄 삭제
+        async function deleteAllCourses() {
+            if (!confirm('⚠️ 경고!\n\n모든 강좌와 수강신청 내역이 삭제됩니다.\n정말 삭제하시겠습니까?')) {
+                return;
+            }
+            
+            if (!confirm('⚠️ 최종 확인\n\n이 작업은 되돌릴 수 없습니다!\n정말로 삭제하시겠습니까?')) {
+                return;
+            }
+            
+            const response = await fetch('/api/admin/courses/delete-all', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' }
+            });
+            const result = await response.json();
+            
+            showMessage(result.message, result.success);
+            if (result.success) {
+                loadCourses();
+            }
+        }
+
         // 신청자 목록 보기
         async function viewEnrollments(courseId, courseName) {
-            const response = await fetch(`/api/admin/course/${courseId}/enrollments`);
+            const response = await fetch(`/api/admin/course/$${courseId}/enrollments`);
             const enrollments = await response.json();
             
             document.getElementById('modalTitle').textContent = `📋 ${courseName} 신청자 목록`;

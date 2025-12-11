@@ -438,6 +438,28 @@ def delete_course(course_id):
     conn.close()
     
     return jsonify({"success": True, "message": "강좌 삭제 완료!"})
+@app.route('/api/admin/courses/delete-all', methods=['POST'])
+def delete_all_courses():
+    if not session.get('admin_logged_in'):
+        return jsonify({"success": False, "message": "관리자 로그인 필요"})
+    
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    try:
+        # 1. 수강신청 내역 먼저 삭제
+        cursor.execute('DELETE FROM enrollments')
+        
+        # 2. 강좌 전체 삭제
+        cursor.execute('DELETE FROM courses')
+        
+        conn.commit()
+        conn.close()
+        return jsonify({"success": True, "message": "모든 강좌가 삭제되었습니다."})
+    except Exception as e:
+        conn.rollback()
+        conn.close()
+        return jsonify({"success": False, "message": f"오류 발생: {str(e)}"})
 
 @app.route('/api/admin/course/<int:course_id>/reset', methods=['POST'])
 def reset_course(course_id):

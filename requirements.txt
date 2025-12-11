@@ -3,3 +3,5 @@ gunicorn
 google-auth
 google-auth-oauthlib
 requests
+certifi
+psycopg2-binary

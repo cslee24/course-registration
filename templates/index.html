@@ -4,344 +4,187 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>수강신청 시스템</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Google Fonts (Pretendard or Noto Sans KR) -->
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;700&display=swap" rel="stylesheet">
     <style>
-        body {
-            font-family: 'Segoe UI', sans-serif;
-            max-width: 600px;
-            margin: 50px auto;
-            padding: 20px;
-            background-color: #f5f5f5;
-        }
-        h1, h2 { color: #333; text-align: center; }
-        h2 { font-size: 18px; margin-top: 30px; }
-        
-        .login-box {
-            background: white;
-            padding: 30px;
-            border-radius: 8px;
-            text-align: center;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-            margin-bottom: 20px;
-        }
-        .login-btn {
-            display: inline-flex;
-            align-items: center;
-            padding: 12px 24px;
-            background-color: white;
-            border: 1px solid #ddd;
-            border-radius: 5px;
-            text-decoration: none;
-            color: #333;
-            font-size: 16px;
-            cursor: pointer;
-        }
-        .login-btn:hover { background-color: #f5f5f5; }
-        .login-btn img { width: 20px; margin-right: 10px; }
-        
-        .user-info {
-            background: #d4edda;
-            padding: 15px 20px;
-            border-radius: 8px;
-            margin-bottom: 20px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-        .user-info .name { font-weight: bold; font-size: 18px; }
-        .user-info .email { color: #666; font-size: 14px; }
-        .logout-btn {
-            padding: 8px 15px;
-            background-color: #dc3545;
-            color: white;
-            border: none;
-            border-radius: 4px;
-            cursor: pointer;
-            text-decoration: none;
-        }
-        
-        .time-info {
-            background: #e3f2fd;
-            padding: 15px;
-            border-radius: 8px;
-            margin-bottom: 20px;
-            text-align: center;
-            border: 1px solid #2196f3;
-        }
-        .time-info.closed {
-            background: #ffebee;
-            border-color: #f44336;
-        }
-        .time-info .status { font-size: 18px; font-weight: bold; margin-bottom: 10px; }
-        .time-info .schedule { color: #666; font-size: 14px; }
-        
-        .course {
-            background: white;
-            padding: 15px;
-            margin: 10px 0;
-            border-radius: 8px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-        }
-        .course-name { font-weight: bold; font-size: 18px; }
-        .course-count { color: #666; }
-        
-        button {
-            padding: 10px 20px;
-            border: none;
-            border-radius: 5px;
-            cursor: pointer;
-            font-size: 14px;
-        }
-        .btn-enroll { background-color: #4CAF50; color: white; }
-        .btn-enroll:hover { background-color: #45a049; }
-        .btn-closed { background-color: #ccc; color: #666; cursor: not-allowed; }
-        .btn-disabled { background-color: #95a5a6; color: white; cursor: not-allowed; }
-        .btn-cancel { background-color: #e74c3c; color: white; }
-        .btn-cancel:hover { background-color: #c0392b; }
-        
-        .message {
-            text-align: center;
-            padding: 10px;
-            margin: 10px 0;
-            border-radius: 5px;
-        }
-        .success { background-color: #d4edda; color: #155724; }
-        .error { background-color: #f8d7da; color: #721c24; }
-        
-        .my-enrollments {
-            background: #fff3cd;
-            padding: 15px;
-            border-radius: 8px;
-            margin-top: 20px;
-        }
-        .my-enrollments h3 { margin-top: 0; color: #856404; }
-        .my-enrollment-item {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: 10px;
-            background: white;
-            margin: 5px 0;
-            border-radius: 4px;
-            border: 1px solid #ffc107;
-        }
+        body { font-family: 'Noto Sans KR', sans-serif; }
     </style>
 </head>
-<body>
-    <h1>📚 수강신청 시스템</h1>
-    
-    <!-- 로그인 전 -->
-    <div id="loginBox" class="login-box" style="display: none;">
-        <p>학교 Google 계정으로 로그인하세요</p>
-        <a href="/login" class="login-btn">
-            <img src="https://www.google.com/favicon.ico" alt="Google">
-            Google로 로그인
-        </a>
-    </div>
-    
-    <!-- 로그인 후 -->
-    <div id="userInfo" class="user-info" style="display: none;">
-        <div>
-            <div class="name" id="userName"></div>
-            <div class="email" id="userEmail"></div>
+<body class="bg-gray-50 text-gray-800 flex flex-col min-h-screen">
+
+    <!-- 네비게이션 바 -->
+    <nav class="bg-white shadow-sm sticky top-0 z-50 border-b border-gray-100">
+        <div class="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex justify-between h-16">
+                <div class="flex items-center">
+                    <span class="text-xl font-bold text-indigo-600 tracking-tight">🏫 수강신청</span>
+                </div>
+                <div class="flex items-center space-x-3">
+                    {% if user %}
+                        <div class="hidden sm:flex flex-col items-end mr-2">
+                            <span class="text-sm font-semibold text-gray-700">{{ user.name }}</span>
+                            <span class="text-xs text-gray-500">{{ user.email }}</span>
+                        </div>
+                        <a href="/logout" class="px-3 py-2 rounded-lg bg-gray-100 text-gray-600 text-sm font-medium hover:bg-gray-200 transition">로그아웃</a>
+                    {% else %}
+                        <a href="/login" class="flex items-center px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-700 transition shadow-sm">
+                            <svg class="w-4 h-4 mr-2" viewBox="0 0 24 24" fill="currentColor"><path d="M12.545,10.239v3.821h5.445c-0.712,2.315-2.647,3.972-5.445,3.972c-3.332,0-6.033-2.701-6.033-6.032s2.701-6.032,6.033-6.032c1.498,0,2.866,0.549,3.921,1.453l2.814-2.814C17.503,2.988,15.139,2,12.545,2C7.021,2,2.543,6.477,2.543,12s4.478,10,10.002,10c8.396,0,10.249-7.85,9.426-11.748L12.545,10.239z"/></svg>
+                            Google 로그인
+                        </a>
+                    {% endif %}
+                </div>
+            </div>
         </div>
-        <a href="/logout" class="logout-btn">로그아웃</a>
-    </div>
-    
-    <!-- 신청 시간 안내 -->
-    <div id="timeInfo" class="time-info">
-        <div class="status" id="timeStatus">⏳ 로딩 중...</div>
-        <div class="schedule" id="timeSchedule"></div>
-    </div>
-    
-    <div id="message"></div>
-    
-    <!-- 내 신청 목록 -->
-    <div id="myEnrollmentsSection" class="my-enrollments" style="display: none;">
-        <h3>📋 내 신청 목록</h3>
-        <div id="myEnrollments"></div>
-    </div>
-    
-    <h2>강좌 목록</h2>
-    <div id="courses"></div>
+    </nav>
 
-    <script>
-        let currentUser = null;
-        let enrollAllowed = false;
+    <!-- 메인 컨텐츠 -->
+    <main class="flex-grow max-w-4xl mx-auto px-4 py-8 sm:px-6 lg:px-8 w-full">
+        
+        <!-- 알림 메시지 (Flash Messages) -->
+        {% with messages = get_flashed_messages() %}
+            {% if messages %}
+                <div class="mb-8 space-y-3">
+                    {% for message in messages %}
+                        <div class="flex items-center p-4 rounded-xl bg-indigo-50 text-indigo-800 border border-indigo-100 shadow-sm animate-fade-in-down">
+                            <svg class="w-5 h-5 mr-3 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                            <span class="font-medium">{{ message }}</span>
+                        </div>
+                    {% endfor %}
+                </div>
+            {% endif %}
+        {% endwith %}
 
-        // 로그인 정보 확인
-        async function checkLogin() {
-            const response = await fetch('/api/user');
-            const data = await response.json();
-            
-            if (data.logged_in) {
-                currentUser = data.user;
-                document.getElementById('loginBox').style.display = 'none';
-                document.getElementById('userInfo').style.display = 'flex';
-                document.getElementById('userName').textContent = currentUser.name;
-                document.getElementById('userEmail').textContent = currentUser.email;
-                loadMyEnrollments();
-            } else {
-                currentUser = null;
-                document.getElementById('loginBox').style.display = 'block';
-                document.getElementById('userInfo').style.display = 'none';
-                document.getElementById('myEnrollmentsSection').style.display = 'none';
-            }
-            loadCourses();
-        }
+        <!-- 타이틀 섹션 -->
+        <div class="text-center mb-12">
+            <h1 class="text-3xl font-extrabold text-gray-900 mb-3 tracking-tight">2025학년도 방과후 학교</h1>
+            <p class="text-gray-500 max-w-lg mx-auto">원하는 강좌를 확인하고 신청하세요. <br class="sm:hidden">선착순으로 마감됩니다.</p>
+        </div>
 
-        // 신청 시간 정보 불러오기
-        async function loadTimeInfo() {
-            const response = await fetch('/api/enroll-time');
-            const data = await response.json();
+        <!-- 내 신청 현황 (로그인 시 표시) -->
+        {% if user %}
+        <div class="mb-12 bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+            <div class="px-6 py-4 border-b border-gray-50 bg-gray-50/50 flex justify-between items-center">
+                <h3 class="text-lg font-bold text-gray-800 flex items-center">
+                    <svg class="w-5 h-5 mr-2 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"></path></svg>
+                    내 신청 내역
+                </h3>
+                <span class="text-xs font-medium px-2 py-1 bg-indigo-100 text-indigo-700 rounded-full">{{ my_enrollments|length }}개 신청중</span>
+            </div>
             
-            const timeInfo = document.getElementById('timeInfo');
-            const status = document.getElementById('timeStatus');
-            const schedule = document.getElementById('timeSchedule');
-            
-            enrollAllowed = data.allowed;
-            
-            if (data.allowed) {
-                timeInfo.className = 'time-info';
-                status.textContent = '✅ 신청 가능';
-            } else {
-                timeInfo.className = 'time-info closed';
-                status.textContent = '❌ ' + data.message;
-            }
-            
-            if (data.start && data.end) {
-                const startDate = new Date(data.start);
-                const endDate = new Date(data.end);
-                schedule.textContent = `신청 기간: ${formatDate(startDate)} ~ ${formatDate(endDate)}`;
-            } else {
-                schedule.textContent = '';
-            }
-            
-            loadCourses();
-        }
-
-        function formatDate(date) {
-            return `${date.getMonth()+1}/${date.getDate()} ${date.getHours().toString().padStart(2,'0')}:${date.getMinutes().toString().padStart(2,'0')}`;
-        }
-
-        async function loadCourses() {
-            const response = await fetch('/api/courses');
-            const courses = await response.json();
-            
-            const container = document.getElementById('courses');
-            container.innerHTML = '';
-            
-            courses.forEach(course => {
-                const isFull = course.enrolled >= course.limit;
-                const notLoggedIn = !currentUser;
-                const canEnroll = enrollAllowed && !isFull && !notLoggedIn;
-                
-                let btnClass = 'btn-disabled';
-                let btnText = '로그인 필요';
-                
-                if (!enrollAllowed) {
-                    btnClass = 'btn-closed';
-                    btnText = '신청불가';
-                } else if (isFull) {
-                    btnClass = 'btn-closed';
-                    btnText = '마감';
-                } else if (!notLoggedIn) {
-                    btnClass = 'btn-enroll';
-                    btnText = '신청하기';
-                }
-                
-                const div = document.createElement('div');
-                div.className = 'course';
-                div.innerHTML = `
-                    <div>
-                        <div class="course-name">${course.name}</div>
-                        <div class="course-count">${course.enrolled}/${course.limit}명</div>
+            <div class="p-6">
+                {% if my_enrollments %}
+                    <ul class="space-y-3">
+                        {% for enroll in my_enrollments %}
+                            <li class="flex items-center justify-between p-4 bg-indigo-50/50 rounded-xl border border-indigo-50 hover:border-indigo-100 transition">
+                                <span class="font-semibold text-indigo-900">{{ enroll.course_name }}</span>
+                                <form action="/cancel" method="post" onsubmit="return confirm('정말 취소하시겠습니까?');">
+                                    <input type="hidden" name="course_id" value="{{ enroll.course_id }}">
+                                    <button type="submit" class="text-sm font-medium text-red-500 hover:text-red-700 hover:bg-red-50 px-3 py-1.5 rounded-lg transition">
+                                        취소
+                                    </button>
+                                </form>
+                            </li>
+                        {% endfor %}
+                    </ul>
+                {% else %}
+                    <div class="text-center py-8">
+                        <p class="text-gray-400 text-sm">아직 신청한 강좌가 없습니다.</p>
                     </div>
-                    <button 
-                        class="${btnClass}"
-                        ${canEnroll ? '' : 'disabled'}
-                        onclick="enroll(${course.id})">
-                        ${btnText}
-                    </button>
-                `;
-                container.appendChild(div);
-            });
-        }
+                {% endif %}
+            </div>
+        </div>
+        {% endif %}
 
-        async function loadMyEnrollments() {
-            if (!currentUser) return;
+        <!-- 강좌 목록 Grid -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {% for course in courses %}
+            {% set percent = (course.enrolled / course.limit_num * 100) | int %}
+            {% set is_full = course.enrolled >= course.limit_num %}
             
-            const response = await fetch('/api/my-enrollments');
-            const enrollments = await response.json();
-            
-            const section = document.getElementById('myEnrollmentsSection');
-            const container = document.getElementById('myEnrollments');
-            
-            if (enrollments.length === 0) {
-                section.style.display = 'none';
-                return;
-            }
-            
-            section.style.display = 'block';
-            container.innerHTML = '';
-            
-            enrollments.forEach(e => {
-                const div = document.createElement('div');
-                div.className = 'my-enrollment-item';
-                div.innerHTML = `
-                    <span>${e.course_name}</span>
-                    <button class="btn-cancel" onclick="cancelEnrollment(${e.id})" ${enrollAllowed ? '' : 'disabled'}>취소</button>
-                `;
-                container.appendChild(div);
-            });
-        }
+            <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden hover:shadow-md transition-shadow duration-300 flex flex-col h-full relative group">
+                <!-- 상태 뱃지 -->
+                <div class="absolute top-4 right-4">
+                    {% if is_full %}
+                        <span class="px-2.5 py-1 text-xs font-bold text-red-600 bg-red-100 rounded-full border border-red-200">마감</span>
+                    {% else %}
+                        <span class="px-2.5 py-1 text-xs font-bold text-emerald-600 bg-emerald-100 rounded-full border border-emerald-200">신청가능</span>
+                    {% endif %}
+                </div>
 
-        async function enroll(courseId) {
-            if (!currentUser) {
-                alert('로그인이 필요합니다.');
-                return;
-            }
-            
-            const response = await fetch('/api/enroll', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ course_id: courseId })
-            });
-            const result = await response.json();
-            
-            showMessage(result.message, result.success);
-            loadCourses();
-            loadMyEnrollments();
-        }
+                <div class="p-6 flex-grow">
+                    <h3 class="text-xl font-bold text-gray-900 mb-1 pr-16">{{ course.name }}</h3>
+                    <p class="text-xs text-gray-400 mb-6 font-mono">CODE: {{ course.id }}</p>
+                    
+                    <!-- 인원 현황 그래프 -->
+                    <div class="space-y-2">
+                        <div class="flex justify-between text-sm">
+                            <span class="text-gray-500">현재 인원</span>
+                            <span class="font-bold {{ 'text-red-600' if is_full else 'text-indigo-600' }}">
+                                {{ course.enrolled }} <span class="text-gray-400 font-normal">/ {{ course.limit_num }}</span>
+                            </span>
+                        </div>
+                        <div class="w-full bg-gray-100 rounded-full h-3 overflow-hidden">
+                            <div class="h-3 rounded-full transition-all duration-500 {{ 'bg-red-500' if is_full else 'bg-indigo-500' }}" 
+                                 style="width: {{ percent }}%"></div>
+                        </div>
+                        <div class="text-right text-xs text-gray-400">{{ percent }}% 찼습니다</div>
+                    </div>
+                </div>
 
-        async function cancelEnrollment(enrollmentId) {
-            if (!confirm('정말 취소하시겠습니까?')) return;
-            
-            const response = await fetch('/api/cancel', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ enrollment_id: enrollmentId })
-            });
-            const result = await response.json();
-            
-            showMessage(result.message, result.success);
-            loadCourses();
-            loadMyEnrollments();
-        }
+                <!-- 하단 버튼 영역 -->
+                <div class="px-6 py-4 bg-gray-50/50 border-t border-gray-100">
+                    {% if user %}
+                        {% set ns = namespace(applied=false) %}
+                        {% for enroll in my_enrollments %}
+                            {% if enroll.course_id == course.id %}
+                                {% set ns.applied = true %}
+                            {% endif %}
+                        {% endfor %}
 
-        function showMessage(text, isSuccess) {
-            const msgDiv = document.getElementById('message');
-            msgDiv.className = 'message ' + (isSuccess ? 'success' : 'error');
-            msgDiv.textContent = text;
-            setTimeout(() => msgDiv.textContent = '', 3000);
-        }
+                        {% if ns.applied %}
+                            <button disabled class="w-full py-3 px-4 bg-gray-200 text-gray-500 font-bold rounded-xl cursor-not-allowed flex justify-center items-center">
+                                <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+                                이미 신청함
+                            </button>
+                        {% elif is_full %}
+                            <button disabled class="w-full py-3 px-4 bg-gray-100 text-gray-400 font-bold rounded-xl cursor-not-allowed border border-gray-200">
+                                정원 마감
+                            </button>
+                        {% else %}
+                            <form action="/enroll" method="post">
+                                <input type="hidden" name="course_id" value="{{ course.id }}">
+                                <button type="submit" class="w-full py-3 px-4 bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white font-bold rounded-xl shadow-indigo-200 shadow-md transition-all duration-200 transform active:scale-95 flex justify-center items-center">
+                                    수강신청 하기
+                                </button>
+                            </form>
+                        {% endif %}
+                    {% else %}
+                        <a href="/login" class="block w-full text-center py-3 px-4 border-2 border-indigo-100 text-indigo-600 font-bold rounded-xl hover:bg-indigo-50 hover:border-indigo-200 transition">
+                            로그인 후 신청
+                        </a>
+                    {% endif %}
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        
+    </main>
 
-        // 페이지 로드 시
-        checkLogin();
-        loadTimeInfo();
-        setInterval(loadTimeInfo, 10000);
-    </script>
+    <footer class="mt-auto py-8 text-center text-gray-400 text-sm bg-gray-50 border-t border-gray-100">
+        <p>&copy; 2025 High School Course Registration System.</p>
+    </footer>
+
+    <!-- 애니메이션 스타일 -->
+    <style>
+        @keyframes fadeInDown {
+            from { opacity: 0; transform: translateY(-10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .animate-fade-in-down {
+            animation: fadeInDown 0.3s ease-out;
+        }
+    </style>
 </body>
 </html>

@@ -271,6 +271,11 @@ def admin_logout():
     session.pop('admin_logged_in', None)
     return redirect('/admin')
 
+@app.route('/api/courses', methods=['GET'])
+def get_all_courses():
+    result = supabase.table('courses').select('*').order('id').execute()
+    return jsonify(result.data)
+
 @app.route('/api/admin/course', methods=['POST'])
 def add_course():
     data = request.get_json()

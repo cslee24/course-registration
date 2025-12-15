@@ -154,7 +154,6 @@
             text-align: center;
         }
 
-        /* 위험 구역 스타일 추가 */
         .danger-zone {
             background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
             border: 2px solid #e74c3c;
@@ -194,17 +193,14 @@
     <h1>🔧 관리자 페이지</h1>
     <a href="/admin/logout" class="logout-link">로그아웃</a>
     
-    <!-- 메시지 표시 영역 -->
     <div id="message"></div>
     
-    <!-- 전체 다운로드 버튼 -->
     <div style="text-align: center; margin: 20px 0;">
         <a href="/api/admin/download/all" class="btn" style="background-color: #27ae60; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">
             📥 전체 신청자 엑셀 다운로드
         </a>
     </div>
     
-    <!-- 신청 시간 설정 -->
     <div class="settings-box">
         <h3>⏰ 신청 시간 설정</h3>
         <label>시작 시간</label>
@@ -216,7 +212,6 @@
         <div class="current-setting" id="currentSetting">현재 설정: 로딩 중...</div>
     </div>
     
-    <!-- 강좌 추가 -->
     <div class="add-form">
         <h3>➕ 강좌 추가</h3>
         <input type="text" id="courseName" placeholder="강좌명">
@@ -224,7 +219,6 @@
         <button onclick="addCourse()">추가</button>
     </div>
 
-    <!-- ⚠️ 위험 구역 - 일괄 삭제 -->
     <div class="danger-zone">
         <h4>⚠️ 위험 구역</h4>
         <p>모든 강좌와 수강신청 내역이 삭제됩니다. 이 작업은 되돌릴 수 없습니다.</p>
@@ -233,7 +227,6 @@
         </button>
     </div>
     
-    <!-- 강좌 목록 테이블 -->
     <table>
         <thead>
             <tr>
@@ -248,7 +241,6 @@
     
     <a href="/" class="home-link">← 수강신청 페이지로 돌아가기</a>
 
-    <!-- 신청자 목록 모달 -->
     <div id="modal" class="modal">
         <div class="modal-content">
             <div class="modal-header">
@@ -260,7 +252,6 @@
     </div>
 
     <script>
-        // 시간 설정 불러오기
         async function loadTimeSetting() {
             const response = await fetch('/api/admin/settings/time');
             const data = await response.json();
@@ -276,7 +267,6 @@
             }
         }
 
-        // 시간 설정 저장
         async function saveTime() {
             const start = document.getElementById('enrollStart').value;
             const end = document.getElementById('enrollEnd').value;
@@ -297,32 +287,40 @@
             loadTimeSetting();
         }
 
-        // 강좌 목록 불러오기
         async function loadCourses() {
-            const response = await fetch('/api/courses');
-            const courses = await response.json();
-            
-            const table = document.getElementById('courseTable');
-            table.innerHTML = '';
-            
-            courses.forEach(course => {
-                const tr = document.createElement('tr');
-                tr.innerHTML = `
-                    <td>${course.id}</td>
-                    <td>${course.name}</td>
-                    <td>${course.enrolled}/${course.limit}명</td>
-                    <td>
-                        <button class="btn btn-view" onclick="viewEnrollments(${course.id}, '${course.name}')">목록</button>
-                        <a href="/api/admin/download/${course.id}" class="btn" style="background-color: #17a2b8; color: white; text-decoration: none;">다운</a>
-                        <button class="btn btn-reset" onclick="resetCourse(${course.id})">초기화</button>
-                        <button class="btn btn-delete" onclick="deleteCourse(${course.id})">삭제</button>
-                    </td>
-                `;
-                table.appendChild(tr);
-            });
+            try {
+                const response = await fetch('/api/courses');
+                const courses = await response.json();
+                
+                const table = document.getElementById('courseTable');
+                table.innerHTML = '';
+                
+                if (courses.length === 0) {
+                    table.innerHTML = '<tr><td colspan="4" style="color: #95a5a6;">등록된 강좌가 없습니다.</td></tr>';
+                    return;
+                }
+                
+                courses.forEach(course => {
+                    const tr = document.createElement('tr');
+                    tr.innerHTML = `
+                        <td>${course.id}</td>
+                        <td>${course.name}</td>
+                        <td>${course.enrolled}/${course.limit_num}명</td>
+                        <td>
+                            <button class="btn btn-view" onclick="viewEnrollments(${course.id}, '${course.name}')">목록</button>
+                            <a href="/api/admin/download/${course.id}" class="btn" style="background-color: #17a2b8; color: white; text-decoration: none;">다운</a>
+                            <button class="btn btn-reset" onclick="resetCourse(${course.id})">초기화</button>
+                            <button class="btn btn-delete" onclick="deleteCourse(${course.id})">삭제</button>
+                        </td>
+                    `;
+                    table.appendChild(tr);
+                });
+            } catch (error) {
+                console.error('강좌 목록 로드 실패:', error);
+                showMessage('강좌 목록을 불러오는데 실패했습니다.', false);
+            }
         }
 
-        // 메시지 표시
         function showMessage(text, isSuccess) {
             const msgDiv = document.getElementById('message');
             msgDiv.className = 'message ' + (isSuccess ? 'success' : 'error');
@@ -330,7 +328,6 @@
             setTimeout(() => msgDiv.textContent = '', 3000);
         }
 
-        // 강좌 추가
         async function addCourse() {
             const name = document.getElementById('courseName').value;
             const limit = document.getElementById('courseLimit').value;
@@ -340,44 +337,56 @@
                 return;
             }
             
-            const response = await fetch('/api/admin/course', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ name: name, limit: parseInt(limit) })
-            });
-            const result = await response.json();
-            
-            showMessage(result.message, result.success);
-            if (result.success) {
-                document.getElementById('courseName').value = '';
-                document.getElementById('courseLimit').value = '';
-                loadCourses();
+            try {
+                const response = await fetch('/api/admin/course', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name: name, limit: parseInt(limit) })
+                });
+                const result = await response.json();
+                
+                showMessage(result.message, result.success);
+                if (result.success) {
+                    document.getElementById('courseName').value = '';
+                    document.getElementById('courseLimit').value = '';
+                    loadCourses();
+                }
+            } catch (error) {
+                console.error('강좌 추가 실패:', error);
+                showMessage('강좌 추가에 실패했습니다.', false);
             }
         }
 
-        // 강좌 초기화
         async function resetCourse(id) {
             if (!confirm('이 강좌의 신청 내역을 모두 삭제할까요?')) return;
             
-            const response = await fetch(`/api/admin/course/${id}/reset`, { method: 'POST' });
-            const result = await response.json();
-            
-            showMessage(result.message, result.success);
-            loadCourses();
+            try {
+                const response = await fetch(`/api/admin/course/${id}/reset`, { method: 'POST' });
+                const result = await response.json();
+                
+                showMessage(result.message, result.success);
+                loadCourses();
+            } catch (error) {
+                console.error('초기화 실패:', error);
+                showMessage('초기화에 실패했습니다.', false);
+            }
         }
 
-        // 강좌 삭제
         async function deleteCourse(id) {
             if (!confirm('정말 이 강좌를 삭제할까요?')) return;
             
-            const response = await fetch(`/api/admin/course/$${id}`, { method: 'DELETE' });
-            const result = await response.json();
-            
-            showMessage(result.message, result.success);
-            loadCourses();
+            try {
+                const response = await fetch(`/api/admin/course/${id}`, { method: 'DELETE' });
+                const result = await response.json();
+                
+                showMessage(result.message, result.success);
+                loadCourses();
+            } catch (error) {
+                console.error('삭제 실패:', error);
+                showMessage('삭제에 실패했습니다.', false);
+            }
         }
 
-        // 🗑️ 모든 강좌 일괄 삭제
         async function deleteAllCourses() {
             if (!confirm('⚠️ 경고!\n\n모든 강좌와 수강신청 내역이 삭제됩니다.\n정말 삭제하시겠습니까?')) {
                 return;
@@ -387,47 +396,54 @@
                 return;
             }
             
-            const response = await fetch('/api/admin/courses/delete-all', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' }
-            });
-            const result = await response.json();
-            
-            showMessage(result.message, result.success);
-            if (result.success) {
-                loadCourses();
-            }
-        }
-
-        // 신청자 목록 보기
-        async function viewEnrollments(courseId, courseName) {
-            const response = await fetch(`/api/admin/course/$${courseId}/enrollments`);
-            const enrollments = await response.json();
-            
-            document.getElementById('modalTitle').textContent = `📋 ${courseName} 신청자 목록`;
-            
-            const list = document.getElementById('enrollmentList');
-            list.innerHTML = '';
-            
-            if (enrollments.length === 0) {
-                list.innerHTML = '<li class="no-data">신청자가 없습니다.</li>';
-            } else {
-                enrollments.forEach((e, index) => {
-                    const li = document.createElement('li');
-                    li.textContent = `${index + 1}. ${e.student_id} - ${e.student_name} (${e.enrolled_at})`;
-                    list.appendChild(li);
+            try {
+                const response = await fetch('/api/admin/courses/delete-all', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
                 });
+                const result = await response.json();
+                
+                showMessage(result.message, result.success);
+                if (result.success) {
+                    loadCourses();
+                }
+            } catch (error) {
+                console.error('일괄 삭제 실패:', error);
+                showMessage('일괄 삭제에 실패했습니다.', false);
             }
-            
-            document.getElementById('modal').style.display = 'flex';
         }
 
-        // 모달 닫기
+        async function viewEnrollments(courseId, courseName) {
+            try {
+                const response = await fetch(`/api/admin/course/${courseId}/enrollments`);
+                const enrollments = await response.json();
+                
+                document.getElementById('modalTitle').textContent = `📋 ${courseName} 신청자 목록`;
+                
+                const list = document.getElementById('enrollmentList');
+                list.innerHTML = '';
+                
+                if (enrollments.length === 0) {
+                    list.innerHTML = '<li class="no-data">신청자가 없습니다.</li>';
+                } else {
+                    enrollments.forEach((e, index) => {
+                        const li = document.createElement('li');
+                        li.textContent = `${index + 1}. ${e.student_id} - ${e.student_name} (${e.enrolled_at})`;
+                        list.appendChild(li);
+                    });
+                }
+                
+                document.getElementById('modal').style.display = 'flex';
+            } catch (error) {
+                console.error('신청자 목록 조회 실패:', error);
+                showMessage('신청자 목록을 불러오는데 실패했습니다.', false);
+            }
+        }
+
         function closeModal() {
             document.getElementById('modal').style.display = 'none';
         }
 
-        // 페이지 로드 시 실행
         loadTimeSetting();
         loadCourses();
     </script>
